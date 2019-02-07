@@ -18,9 +18,21 @@
 using namespace std;
 
 //static int connFd;
-static string rootDir = "/home/mayank/Sem-8/NSS/nss0_fileSystem/direc/root";
+static string rootDir = "/home/mayank/Sem-8/NSS/nss1_aclSuidNetfKernel/direc/root";
 static string homeDir = "/simple_home";
 static list<string> loggedUsers;
+
+
+string requestLoginInfo(int connFd, string message){
+	message += "Enter your username: ";
+	char temp_array[300];
+	send(connFd, (void *)message.c_str(), 300, 0);
+	// 'response' received from the server
+	bzero(temp_array, 301);
+	recv(connFd, temp_array, 300, 0);
+	string response = temp_array;
+	return response;
+}
 
 bool authenticate_user(string currUser){
 	ifstream infile;
@@ -378,8 +390,8 @@ void *serverHandler (void* dummyPt){
 	cout << "Thread No: " << pthread_self() << endl;
 	char test[300];
 	// 'message' to be sent to the server
-	string message="Enter your username: ";
 	int connFd =  *((int *)dummyPt);
+	string message="Enter your username: ";
 	send(connFd, (void *)message.c_str(), 300, 0);
 	
 	// 'response' received from the server
@@ -397,39 +409,27 @@ void *serverHandler (void* dummyPt){
 	string currUser;
 	string currGroup;
 
-	if(!authenticate_user(response)){
-		message = "User does not exist. Do you want to create a new one? (yes/no): ";
-		send(connFd, (void *)message.c_str(), 300, 0);
+	int loginAttempts = 1;
+	while(!authenticate_user(response)){
+		if(loginAttempts>=3){
+			cout << "Closing Thread" << endl;
+			close(connFd);
+			pthread_exit(NULL);
+		}
+		message = "User does not exist\n";
+		message += "Enter your username: ";
 		
+		send(connFd, (void *)message.c_str(), 300, 0);
 		bzero(test, 301);
 		recvBytes = recv(connFd, test, 300, 0);
 		if(recvBytes==(ssize_t)0){
 			pthread_exit(NULL);
 		}
 		response = test;
-
-		if(response == "yes"){
-			bool newUserBool = createNewUser(threadUser, threadGroup);
-			if(newUserBool){
-				currUser = threadUser;
-				currGroup= threadGroup;
-				currDirec = rootDir + homeDir + "/" + threadUser;
-			}
-			else{
-				// cout << "Closing Thread" << endl;
-				// close(connFd);
-				// pthread_exit(NULL);
-				closing_seq("Error creating user", connFd);
-			}
-		}
-		else{
-			cout << "Closing Thread" << endl;
-			close(connFd);
-			pthread_exit(NULL);
-			// return closing_seq("Closing Connection", connFd);
-		}
+		loginAttempts++;
 	}
-	else if(find(loggedUsers.begin(), loggedUsers.end(), threadUser)!= loggedUsers.end()){
+
+	if(find(loggedUsers.begin(), loggedUsers.end(), threadUser)!= loggedUsers.end()){
 		// user had already logged in
 		cout << "Existing User"<< endl;
 		close(connFd);
