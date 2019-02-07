@@ -22,25 +22,13 @@ static string rootDir = "/home/mayank/Sem-8/NSS/nss1_aclSuidNetfKernel/direc/roo
 static string homeDir = "/simple_home";
 static list<string> loggedUsers;
 
-
-string requestLoginInfo(int connFd, string message){
-	message += "Enter your username: ";
-	char temp_array[300];
-	send(connFd, (void *)message.c_str(), 300, 0);
-	// 'response' received from the server
-	bzero(temp_array, 301);
-	recv(connFd, temp_array, 300, 0);
-	string response = temp_array;
-	return response;
-}
-
 bool authenticate_user(string currUser){
 	ifstream infile;
-	string user_file = "/../users.txt";
-	user_file = rootDir + user_file;
+	string user_file = "/etc/passwd";
 	infile.open(user_file.c_str());
 	string userLine;
 	while(infile >> userLine){
+		
 		if(userLine == currUser){
 			return true;
 		}
