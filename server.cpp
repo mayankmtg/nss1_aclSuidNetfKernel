@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <iostream>
+#include <list>
 #include <fstream>
 #include <dirent.h>
 #include <strings.h>
@@ -19,7 +20,7 @@ using namespace std;
 //static int connFd;
 static string rootDir = "/home/mayank/Sem-8/NSS/nss0_fileSystem/direc/root";
 static string homeDir = "/simple_home";
-
+static list<string> loggedUsers;
 
 bool authenticate_user(string currUser){
 	ifstream infile;
@@ -373,6 +374,7 @@ void appendToFile(string filename, string content){
 }
 
 void *serverHandler (void* dummyPt){
+	bool loop = false;
 	cout << "Thread No: " << pthread_self() << endl;
 	char test[300];
 	// 'message' to be sent to the server
@@ -382,7 +384,10 @@ void *serverHandler (void* dummyPt){
 	
 	// 'response' received from the server
 	bzero(test, 301);
-	recv(connFd, test, 300, 0);
+	ssize_t recvBytes = recv(connFd, test, 300, 0);
+	if(recvBytes==(ssize_t)0){
+		pthread_exit(NULL);
+	}
 	string response = test;
 	string threadUser = response;
 	string threadGroup= response;
@@ -397,7 +402,10 @@ void *serverHandler (void* dummyPt){
 		send(connFd, (void *)message.c_str(), 300, 0);
 		
 		bzero(test, 301);
-		recv(connFd, test, 300, 0);
+		recvBytes = recv(connFd, test, 300, 0);
+		if(recvBytes==(ssize_t)0){
+			pthread_exit(NULL);
+		}
 		response = test;
 
 		if(response == "yes"){
@@ -408,16 +416,30 @@ void *serverHandler (void* dummyPt){
 				currDirec = rootDir + homeDir + "/" + threadUser;
 			}
 			else{
+				// cout << "Closing Thread" << endl;
+				// close(connFd);
+				// pthread_exit(NULL);
 				closing_seq("Error creating user", connFd);
 			}
 		}
 		else{
-			return closing_seq("Closing Connection", connFd);
+			cout << "Closing Thread" << endl;
+			close(connFd);
+			pthread_exit(NULL);
+			// return closing_seq("Closing Connection", connFd);
 		}
+	}
+	else if(find(loggedUsers.begin(), loggedUsers.end(), threadUser)!= loggedUsers.end()){
+		// user had already logged in
+		cout << "Existing User"<< endl;
+		close(connFd);
+		pthread_exit(NULL);
+		// return closing_seq("User already logged in", connFd);
 	}
 	else{
 		currUser = threadUser;
 		currGroup= threadGroup;
+		loggedUsers.push_back(threadUser);
 		currDirec= rootDir + homeDir + "/" + threadUser;
 	}
 	if(getDispPath(currDirec)!="Error"){
@@ -429,10 +451,14 @@ void *serverHandler (void* dummyPt){
 	}
 
 
-	bool loop = false;
 	while(!loop){
 		bzero(test, 301);
-		recv(connFd, test, 300, 0);
+		recvBytes = recv(connFd, test, 300, 0);
+		if(recvBytes == (ssize_t)0){
+			cout << "Closing thread"<< endl;
+			loggedUsers.remove(currUser);
+			pthread_exit(NULL);
+		}
 		string response = test;
 		int pos = response.find(' ');
 		string command = response.substr(0, pos);
@@ -444,6 +470,9 @@ void *serverHandler (void* dummyPt){
 				message += "Error: Could not find directory\n";
 			}
 			else if(argument.length() < rootDir.length()){
+				message += "Error: Unauthorised Access\n";
+			}
+			else if(argument.substr(0,rootDir.length()) != rootDir ){
 				message += "Error: Unauthorised Access\n";
 			}
 			else{
@@ -474,6 +503,9 @@ void *serverHandler (void* dummyPt){
 			else if(argument.length() < rootDir.length()){
 				message += "Error: Unauthorised Access\n";
 			}
+			else if(argument.substr(0,rootDir.length()) != rootDir ){
+				message += "Error: Unauthorised Access\n";
+			}
 			else{
 				if(direcReadAllowed(currUser, currGroup, argument)){
 					currDirec = argument;
@@ -493,12 +525,19 @@ void *serverHandler (void* dummyPt){
 			else if(extractDirec.length() < rootDir.length()){
 				message += "Error: Unauthorised Access\n";
 			}
+			else if(getFileExtension(extractName)==".m" || getFileExtension(extractName)==".d"){
+				message += "Error: File cannot have .m or .d extension";
+			}
 			else if(filePathExists(argument)){
 				if(fileWriteAllowed(currUser, argument)){
 					message = "Input Stream. Q to Quit.\n";
 					send(connFd, (void *)message.c_str(), 300, 0);
 					bzero(test, 301);
-					recv(connFd, test, 300, 0);
+					recvBytes = recv(connFd, test, 300, 0);
+					if(recvBytes == (ssize_t)0){
+						pthread_exit(NULL);
+					}
+
 					response = test;
 					appendToFile(argument,response);
 					message = "";
@@ -511,20 +550,35 @@ void *serverHandler (void* dummyPt){
 				string metaData = "";
 				message = "";
 				while(1){
-					message += "Enter File Owner: ";
+					message += "Enter File Owner (d for default): ";
+					string usergroup = getUserandGroupForDirec(extractDirec);
+					string fileUser = usergroup.substr(0, usergroup.find(' '));
 					send(connFd, (void *)message.c_str(), 300, 0);
 					bzero(test, 301);
-					recv(connFd, test, 300, 0);
+					recvBytes = recv(connFd, test, 300, 0);
+					if(recvBytes == (ssize_t)0){
+						pthread_exit(NULL);
+					}
 					response = test;
+					if(response == "d"){
+						response = fileUser;
+					}
 					if(authenticate_user(response)){
 						metaData+=response + "\n";
 					}
 
-					message = "Enter File Group: ";
+					message = "Enter File Group (d for default): ";
+					string fileGroup= usergroup.substr(usergroup.find(' ')+1);
 					send(connFd, (void *)message.c_str(), 300, 0);
 					bzero(test, 301);
-					recv(connFd, test, 300, 0);
+					recvBytes = recv(connFd, test, 300, 0);
+					if(recvBytes == (ssize_t)0){
+						pthread_exit(NULL);
+					}
 					response = test;
+					if(response == "d"){
+						response = fileGroup;
+					}
 					if(authenticate_group(response)){
 						metaData+=response + "\n";
 						break;
@@ -537,7 +591,10 @@ void *serverHandler (void* dummyPt){
 				message = "Input Stream. Q to Quit.\n";
 				send(connFd, (void *)message.c_str(), 300, 0);
 				bzero(test, 301);
-				recv(connFd, test, 300, 0);
+				recvBytes = recv(connFd, test, 300, 0);
+				if(recvBytes == (ssize_t)0){
+					pthread_exit(NULL);
+				}
 				response = test;
 				appendToFile(argument,response);
 				message = "";
@@ -589,25 +646,40 @@ void *serverHandler (void* dummyPt){
 					string metaData = "";
 					message = "";
 					while(1){
-						message += "Enter Directory Owner: ";
+						message += "Enter Directory Owner (d for default): ";
+						string usergroup = getUserandGroupForDirec(extractDirec);
+						string fileUser = usergroup.substr(0, usergroup.find(' '));
 						send(connFd, (void *)message.c_str(), 300, 0);
 						bzero(test, 301);
-						recv(connFd, test, 300, 0);
+						recvBytes = recv(connFd, test, 300, 0);
+						if(recvBytes == (ssize_t)0){
+							pthread_exit(NULL);
+						}
 						response = test;
+						if(response == "d"){
+							response = fileUser;
+						}
 						if(authenticate_user(response)){
 							metaData+=response + "\n";
 						}
-						message = "Enter Directory Group: ";
+						message = "Enter Directory Group (d for default): ";
+						string fileGroup= usergroup.substr(usergroup.find(' ')+1);
 						send(connFd, (void *)message.c_str(), 300, 0);
 						bzero(test, 301);
-						recv(connFd, test, 300, 0);
+						recvBytes = recv(connFd, test, 300, 0);
+						if(recvBytes == (ssize_t)0){
+							pthread_exit(NULL);
+						}
 						response = test;
+						if(response == "d"){
+							response = fileGroup;
+						}
 						if(authenticate_group(response)){
 							metaData+=response + "\n";
 							break;
 						}
 						metaData = "";
-						message = "Error: does not exist\n";
+						message = "Error: Does not exist\n";
 					}
 					appendToFile(argument+".d", metaData);
 					message = "";
@@ -635,7 +707,7 @@ int main(int argc, char* argv[]) {
 	socklen_t len;
 	bool loop = false;
 	struct sockaddr_in svrAdd, clntAdd;
-	pthread_t threadA[3];
+	pthread_t threadA[10];
 	int connFd;
 
 	if (argc < 2){
@@ -670,7 +742,7 @@ int main(int argc, char* argv[]) {
 	listen(listenFd, 5);
 	len = sizeof(clntAdd);
 	int noThread = 0;
-	while (noThread < 3){
+	while (noThread < 10){
 		cout << "Listening" << endl;
 
 		connFd = accept(listenFd, (struct sockaddr *)&clntAdd, &len);
@@ -685,7 +757,7 @@ int main(int argc, char* argv[]) {
 		noThread++;
 	}
 
-	for(int i = 0; i < 3; i++){
+	for(int i = 0; i < 10; i++){
 		pthread_join(threadA[i], NULL);
 	}
 }

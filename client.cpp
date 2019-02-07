@@ -104,7 +104,11 @@ int main (int argc, char* argv[]){
 		// write(listenFd, test, strlen(test));
 		// message=test;
 		bzero(test, 301);
-		recv(listenFd, test, 300, 0);
+		ssize_t recvBytes = recv(listenFd, test, 300, 0);
+		if(recvBytes==(ssize_t)0){
+			break;
+		}
+		
 		response = test;
 		cout << response;
 
