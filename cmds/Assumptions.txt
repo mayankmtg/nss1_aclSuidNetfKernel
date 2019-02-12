@@ -1,0 +1,4 @@
+fput
+Creating a file in another directory only possible if we have the write access to that directory
+Appending to an existing file is only possible if we have the write access to that file
+
