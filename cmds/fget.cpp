@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <netdb.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <iostream>
 #include <list>
 #include <fstream>
@@ -18,10 +16,12 @@
 #include <sys/xattr.h>
 #include <pwd.h>
 #include <grp.h>
+#include <fstream>
 
 using namespace std;
 
 static string rootDir = "/home/mayank/simple_slash";
+
 uid_t getProcessRuid(){
 	uid_t ruid;
     uid_t euid;
@@ -75,28 +75,6 @@ string getProcessDirectory(){
 	string retString = pwd;
 	return retString;
 }
-
-string getCorrectedPath(string currDirec, string path){
-	if(path[0]=='/'){
-		path = rootDir + path; // absolute path
-	}
-	else{
-		path = currDirec + "/" + path; // relative path
-	}
-	char buf[300];
-	// cout << path << endl;
-	char *res = realpath(path.c_str(), buf);
-	if(res){
-		string returnPath = buf;
-		return returnPath;
-	}
-	else{
-		cout << "Error: In path resolution"<< endl;
-		exit(0);
-	}
-}
-
-
 string getAttribute(string path, string name, int size){
 	// size is the size of the return expected since
 	// getxattr gives garbage after the intended size
@@ -117,25 +95,6 @@ string getUserPermissions(string username, string path){
 string getGroupPermissions(string groupname, string path){
 	string name = "user.group."+groupname;
 	return getAttribute(path, name, 3);
-}
-string getFileOwner(string path){
-	string name = "user.owner";
-	return getAttribute(path, name,2);
-}
-string getFileGroup(string path){
-	string name = "user.group";
-	return getAttribute(path, name,2);
-}
-long getFileSize(string path){
-	FILE* fp = fopen(path.c_str(), "r");
-	if(fp) {
-		fseek(fp, 0 , SEEK_END);
-		long fileSize = ftell(fp);
-		fclose(fp);
-		return fileSize;
-	}
-	cout << "Error: In getting file size"<< endl;
-	exit(0);
 }
 string getGroupUnionPermissions(string currUser, uid_t currUserId, string path){
 	struct passwd * pwuid = getpwuid(currUserId);
@@ -167,7 +126,7 @@ string getGroupUnionPermissions(string currUser, uid_t currUserId, string path){
 	return finalPermissions;
 }
 
-bool direcReadAllowed(string currUser, uid_t currUserId, string path){
+bool fileReadAllowed(string currUser, uid_t currUserId, string path){
 	string userP = getUserPermissions(currUser, path);
 	string groupP = getGroupUnionPermissions(currUser, currUserId, path);
 	if(userP != ""){
@@ -184,22 +143,55 @@ bool direcReadAllowed(string currUser, uid_t currUserId, string path){
 	return false;
 }
 
+string getFileContents(string filename){
+	ifstream infile;
+	infile.open(filename.c_str());
+	string userLine;
+	string returnString="";
+	while(getline(infile, userLine)){
+		returnString+=userLine + "\n";
+	}
+	infile.close();
+	return returnString;
+}
 
-int main(int argc, char** argv){
-	if(argc!=2){
+// returns the corrected paths
+string getCorrectedPath(string currDirec, string path){
+	if(path[0]=='/'){
+		path = rootDir + path; // absolute path
+	}
+	else{
+		path = currDirec + "/" + path; // relative path
+	}
+	char buf[300];
+	// cout << path << endl;
+	char *res = realpath(path.c_str(), buf);
+	if(res){
+		string returnPath = buf;
+		return returnPath;
+	}
+	else{
+		cout << "Error: In path resolution"<< endl;
+		exit(0);
+	}
+}
+
+int main(int argc, char ** argv){
+    if(argc!=2){
 		cout << "Error: Incorrect number of arguments" << endl;
 		exit(0);
 	}
-	string argument = argv[1];
-
-	// Process Variables
+    string argument = argv[1];
+    
+    // Process Variables
 	string currDirec = getProcessDirectory();
 	uid_t currUid = getProcessRuid();
 	string currUser = getProcessUsername(currUid);
 	string currGroup = getProcessGroupname(currUid);
+    // 
 
-	argument = getCorrectedPath(currDirec, argument);
-	if(argument.length() < rootDir.length()){
+    argument = getCorrectedPath(currDirec, argument);
+    if(argument.length() < rootDir.length()){
 		cout << "Error: Unauthorised Access" << endl;
 		exit(0);
 	}
@@ -208,38 +200,14 @@ int main(int argc, char** argv){
 		exit(0);
 	}
 	else {
-		if(direcReadAllowed(currUser, currUid, argument)){
-			DIR *dr = opendir(argument.c_str());
-			struct dirent *de;
-			while ((de = readdir(dr)) != NULL){
-				string thisInode(de->d_name);
-				bool not_relative_dir = thisInode!="." && thisInode!="..";
-				if(not_relative_dir){
-					string inodePath = argument + "/" + thisInode;
-					cout << thisInode + " ";
-					string lsString= getUserPermissions(currUser, inodePath);
-					if(lsString == ""){
-						cout << "---";
-					}
-					else{
-						cout << lsString;
-					}
-					lsString = getGroupUnionPermissions(currUser, currUid, inodePath);
-					if(lsString == ""){
-						cout << "--- ";
-					}
-					else{
-						cout << lsString << " ";
-					}
-					cout << getFileOwner(inodePath) << " ";
-					cout << getFileGroup(inodePath) << " ";
-					cout << getFileSize(inodePath) << endl;
-				}
-			}
+		if(fileReadAllowed(currUser, currUid, argument)){
+            cout << getFileContents(argument) << endl;
 		}
 		else{
 			cout << "Error: No permissions to read this directory" << endl;
 			exit(0);
 		}
 	}
+
+    return 0;
 }

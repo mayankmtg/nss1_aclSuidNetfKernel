@@ -1,4 +1,21 @@
+Any user or group name cannot be more than 2 characters long
+
 fput
+takes argument for a file path (absolute/relative)
 Creating a file in another directory only possible if we have the write access to that directory
 Appending to an existing file is only possible if we have the write access to that file
+The users in group can read the file only
+The owner can read and write the file
+Other cannot read or write to the file
+The directory for the file must exists
+
+list
+takes an argument for a directory
+
+Absolute paths begin with '/' and refer to the simple_slash directory.
+The simple_slash directory is assumed to have the necessary file x attributes
+
+Creating Directory
+Takes as argument the name of the directory.
+It cannot take as argument the name of a file or have '/' in its name
 
