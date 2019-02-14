@@ -17,11 +17,10 @@
 #include <pwd.h>
 #include <grp.h>
 #include <fstream>
-#include <bits/stdc++.h>
+
 using namespace std;
 
 static string rootDir = "/home/mayank/simple_slash";
-
 uid_t getProcessRuid(){
 	uid_t ruid;
     uid_t euid;
@@ -88,13 +87,92 @@ string getAttribute(string path, string name, int size){
 	return temp;
 }
 
-string getFileOwner(string filePath){
-    string owner = getAttribute(filePath, "user.owner", 2);
-    if(owner==""){
-        cout << "Error getting owner"<< endl;
-        exit(0);
+string filterName(string name){
+    if(name == "user.owner"){
+        return string("owner");
     }
-    return owner;
+    else if(name == "user.group"){
+        return string("group");
+    }
+    else{
+        return name.substr(5);
+    }
+}
+
+void printFileAttributes(string filePath){
+    char list[100];
+	ssize_t retVal = listxattr(filePath.c_str(), list, 100);
+    // cout << retVal<< endl;
+    char* p = list;
+    string sarr[100];
+    int i = 0;
+    while(p<(list+retVal)){
+        sarr[i] = p;
+        // cout << *p << endl;
+        p += sarr[i].length()+1;
+        string attrName = filterName(sarr[i]);
+        int bufSize;
+        cout << attrName << " ";
+        if(attrName=="owner" || attrName=="group"){
+            bufSize = 2;
+        }
+        else{
+            bufSize = 3;
+        }
+        cout << getAttribute(filePath.c_str(),sarr[i].c_str(),bufSize) << endl;
+        i++;
+    }
+    return;
+}
+
+string getUserPermissions(string username, string path){
+	string name = "user.user." + username;
+	return getAttribute(path, name, 3);
+}
+
+string getGroupPermissions(string groupname, string path){
+	string name = "user.group."+groupname;
+	return getAttribute(path, name, 3);
+}
+
+string getGroupUnionPermissions(string currUser, uid_t currUserId, string path){
+	struct passwd * pwuid = getpwuid(currUserId);
+	gid_t userGroups[10];
+    int nog=10;
+    int retVal = getgrouplist(currUser.c_str(),pwuid->pw_gid,userGroups,&nog);
+    if(retVal<0){
+        cout << "Error: In getting groups" << endl;
+        return "";
+    }
+	string finalPermissions = "---";
+    for (int i=0;i<nog;i++){
+		struct group * grpstruct= getgrgid(userGroups[i]);
+		string groupP = getGroupPermissions(grpstruct->gr_name, path);
+		if(groupP == ""){
+			continue;
+		}
+		if(groupP[0]=='r'){
+			finalPermissions[0]='r';
+		}
+		if(groupP[1]=='w'){
+			finalPermissions[1]='w';
+		}
+		if(groupP[2]=='x'){
+			finalPermissions[2]='x';
+		}
+    }
+	return finalPermissions;
+}
+
+bool aclManipAllowed(string currUser, string path){
+	string owner = getAttribute(path, string("user.owner"),2);
+    if(owner == ""){
+        cout << "Error: In getting attributes"<< endl;
+    }
+    if(currUser == "fr" || currUser == owner) {
+        return true;
+    }
+    return false;
 }
 
 // returns the corrected paths
@@ -118,15 +196,12 @@ string getCorrectedPath(string currDirec, string path){
 	}
 }
 
-
-int main(int argc, char** argv){
+int main(int argc, char ** argv){
     if(argc!=2){
 		cout << "Error: Incorrect number of arguments" << endl;
 		exit(0);
 	}
     string argument = argv[1];
-
-
     // Process Variables
 	string currDirec = getProcessDirectory();
 	uid_t currUid = getProcessRuid();
@@ -135,44 +210,23 @@ int main(int argc, char** argv){
     // 
 
     argument = getCorrectedPath(currDirec, argument);
-    // string ag2 = argv[1];
-    // stringstream geek(ag2);
-    // int x = 0; 
-    // geek >> x;
-    // uid_t muid = (uid_t) x;
-    uid_t ruid;
-    uid_t euid;
-    uid_t suid;
-    int retVal = getresuid(&ruid, &euid, &suid);
-    if(retVal!=0){
-        cout << "Error1"<< endl;
-        exit(0);
-    }
-    cout << ruid << endl;
-    cout << euid << endl;
-    cout << suid << endl;
-    string owner = getFileOwner(argument);
-    struct passwd* pwnam = getpwnam(owner.c_str());
-    if(pwnam == NULL){
-        cout << "Error: Finding the owner"<< endl;
-        exit(0);
-    }
-    uid_t muid = pwnam->pw_uid;
-    retVal = setuid(muid);
-    if(retVal!=0){
-        cout << "error2"<< endl;
-        exit(0);
-    }
-    cout << "Gone"<< endl;
-    cout << system(argument.c_str())<< endl;
-    cout << "Returned"<< endl;
-    retVal = getresuid(&ruid, &euid, &suid);
-    if(retVal!=0){
-        cout << "Error1"<< endl;
-        exit(0);
-    }
-    cout << ruid << endl;
-    cout << euid << endl;
-    cout << suid << endl;
-    return 0;
+
+    if(argument.length() < rootDir.length()){
+		cout << "Error: Unauthorised Access" << endl;
+		exit(0);
+	}
+	else if(argument.substr(0,rootDir.length()) != rootDir ){
+		cout << "Error: Unauthorised Access" << endl;
+		exit(0);
+	}
+	else {
+		if(aclManipAllowed(currUser, argument)){
+            printFileAttributes(argument);
+		}
+		else{
+			cout << "Error: No permissions to get ACLs" << endl;
+			exit(0);
+		}
+	}
+
 }

@@ -17,11 +17,10 @@
 #include <pwd.h>
 #include <grp.h>
 #include <fstream>
-#include <bits/stdc++.h>
+
 using namespace std;
 
 static string rootDir = "/home/mayank/simple_slash";
-
 uid_t getProcessRuid(){
 	uid_t ruid;
     uid_t euid;
@@ -88,15 +87,6 @@ string getAttribute(string path, string name, int size){
 	return temp;
 }
 
-string getFileOwner(string filePath){
-    string owner = getAttribute(filePath, "user.owner", 2);
-    if(owner==""){
-        cout << "Error getting owner"<< endl;
-        exit(0);
-    }
-    return owner;
-}
-
 // returns the corrected paths
 string getCorrectedPath(string currDirec, string path){
 	if(path[0]=='/'){
@@ -118,14 +108,83 @@ string getCorrectedPath(string currDirec, string path){
 	}
 }
 
+bool aclManipAllowed(string currUser, string path){
+	string owner = getAttribute(path, string("user.owner"),2);
+    if(owner == ""){
+        cout << "Error: In getting attributes"<< endl;
+    }
+    if(currUser == "fr" || currUser == owner) {
+        return true;
+    }
+    return false;
+}
 
-int main(int argc, char** argv){
-    if(argc!=2){
+bool setAttribute(string path, string name, string value){
+	// size is the size of the return expected since
+	// getxattr gives garbage after the intended size
+    int retval = setxattr(path.c_str(), name.c_str(), value.c_str(), (size_t)value.size(), 0);
+    if(retval != 0){
+        cout << "Error: Setting Attributes"<< endl;
+        return false;
+    }
+    return true;
+}
+
+bool setFileAttributes(string filePath, string name, string value){
+    name = "user."+ name;
+    return setAttribute(filePath, name, value);
+}
+
+bool validateName(string name){
+    size_t pos = name.find('.');
+    if(pos==string::npos){
+        return false;
+    }
+    string typeName = name.substr(0,pos);
+    string uName = name.substr(pos+1);
+    if(typeName != "user" && typeName != "group"){
+        return false;
+    }
+    struct passwd* pwnam = getpwnam(uName.c_str());
+    if(pwnam == NULL){
+        return false;
+    }
+    if(uName.length()!=2){
+        return false;
+    }
+    return true;
+}
+
+bool validateValue(string value){
+    if(value.length()!=3){
+        return false;
+    }
+    if(value[0]!='r' && value[0]!='-'){
+        return false;
+    }
+    else if(value[1]!='w' && value[1]!='-'){
+        return false;
+    }
+    else if(value[2]!='x' && value[2]!='-'){
+        return false;
+    }
+    return true;
+}
+
+
+
+int main(int argc, char ** argv){
+    if(argc!=4){
 		cout << "Error: Incorrect number of arguments" << endl;
 		exit(0);
 	}
     string argument = argv[1];
-
+    string name = argv[2];
+    string value = argv[3];
+    if(!validateName(name) || !validateValue(value)){
+        cout << "Error: Incorrect format of arguments" << endl;
+        exit(0);
+    }
 
     // Process Variables
 	string currDirec = getProcessDirectory();
@@ -135,44 +194,25 @@ int main(int argc, char** argv){
     // 
 
     argument = getCorrectedPath(currDirec, argument);
-    // string ag2 = argv[1];
-    // stringstream geek(ag2);
-    // int x = 0; 
-    // geek >> x;
-    // uid_t muid = (uid_t) x;
-    uid_t ruid;
-    uid_t euid;
-    uid_t suid;
-    int retVal = getresuid(&ruid, &euid, &suid);
-    if(retVal!=0){
-        cout << "Error1"<< endl;
-        exit(0);
-    }
-    cout << ruid << endl;
-    cout << euid << endl;
-    cout << suid << endl;
-    string owner = getFileOwner(argument);
-    struct passwd* pwnam = getpwnam(owner.c_str());
-    if(pwnam == NULL){
-        cout << "Error: Finding the owner"<< endl;
-        exit(0);
-    }
-    uid_t muid = pwnam->pw_uid;
-    retVal = setuid(muid);
-    if(retVal!=0){
-        cout << "error2"<< endl;
-        exit(0);
-    }
-    cout << "Gone"<< endl;
-    cout << system(argument.c_str())<< endl;
-    cout << "Returned"<< endl;
-    retVal = getresuid(&ruid, &euid, &suid);
-    if(retVal!=0){
-        cout << "Error1"<< endl;
-        exit(0);
-    }
-    cout << ruid << endl;
-    cout << euid << endl;
-    cout << suid << endl;
+    if(argument.length() < rootDir.length()){
+		cout << "Error: Unauthorised Access" << endl;
+		exit(0);
+	}
+	else if(argument.substr(0,rootDir.length()) != rootDir ){
+		cout << "Error: Unauthorised Access" << endl;
+		exit(0);
+	}
+    else {
+		if(aclManipAllowed(currUser, argument)){
+            if(!setFileAttributes(argument, name, value)){
+                cout << "Error: Unable to set attribute"<< endl;
+                exit(0);
+            }
+		}
+		else{
+			cout << "Error: No permissions to set ACLs" << endl;
+			exit(0);
+		}
+	}
     return 0;
 }

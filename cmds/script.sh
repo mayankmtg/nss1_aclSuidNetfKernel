@@ -1,5 +1,5 @@
 #!/bin/sh
 
-chown fakeroot a.out
+chown fr a.out
 chgrp root a.out
 chmod u+s a.out

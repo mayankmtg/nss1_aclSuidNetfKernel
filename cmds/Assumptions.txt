@@ -19,3 +19,14 @@ Creating Directory
 Takes as argument the name of the directory.
 It cannot take as argument the name of a file or have '/' in its name
 
+
+getfacl
+Only the owner or the fakeroot can access the file
+
+setfacl
+Only the owner or the fakeroot can edit the file
+Cannot change the owner or group of the file
+Can manipulate all other permissions
+
+do_exec
+takes argument of path to binary just like in while executing using system command
