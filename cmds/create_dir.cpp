@@ -100,6 +100,87 @@ string getPathDirectory(string currDirec, string path){
 	}
 }
 
+bool direcExists(string pathname){
+	DIR* dir = opendir(pathname.c_str());
+	if (dir){
+		closedir(dir);
+		return true;
+	}
+	else{
+		return false;
+	}
+}
+
+string getAttribute(string path, string name, int size){
+	// size is the size of the return expected since
+	// getxattr gives garbage after the intended size
+	char buff[size+1];
+	ssize_t retSize = getxattr(path.c_str(), name.c_str(), buff, size);
+	if (retSize < 0) {
+        cout << "Not found attribute "<< name << endl;
+		return "";
+	}
+	buff[size]='\0';
+	string temp = buff;
+	return temp;
+}
+
+string getUserPermissions(string username, string path){
+	string name = "user.user." + username;
+	return getAttribute(path, name, 3);
+}
+string getGroupPermissions(string groupname, string path){
+	string name = "user.group."+groupname;
+	return getAttribute(path, name, 3);
+}
+string getGroupUnionPermissions(string currUser, uid_t currUserId, string path){
+	struct passwd * pwuid = getpwuid(currUserId);
+	gid_t userGroups[10];
+    int nog=10;
+    int retVal = getgrouplist(currUser.c_str(),pwuid->pw_gid,userGroups,&nog);
+    if(retVal<0){
+        cout << "Error: In getting groups" << endl;
+        return "";
+    }
+	string finalPermissions = "---";
+    for (int i=0;i<nog;i++){
+		struct group * grpstruct= getgrgid(userGroups[i]);
+		string groupP = getGroupPermissions(grpstruct->gr_name, path);
+		if(groupP == ""){
+			continue;
+		}
+		if(groupP[0]=='r'){
+			finalPermissions[0]='r';
+
+		}
+		if(groupP[1]=='w'){
+			finalPermissions[1]='w';
+		}
+		if(groupP[2]=='x'){
+			finalPermissions[2]='x';
+		}
+    }
+	return finalPermissions;
+}
+
+
+bool fileWriteAllowed(string currUser, uid_t currUserId, string path){
+    string userP = getUserPermissions(currUser,path);
+    string groupP = getGroupUnionPermissions(currUser,currUserId, path);
+    if(userP!=""){
+        if(userP[1]=='w'){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+    if(groupP[1]=='w'){
+        return true;
+    }
+    return false;
+}
+
 // returns the filename for the path entered
 string getPathName(string currDirec, string path){
     if(path[0]!='/'){
@@ -113,6 +194,28 @@ string getPathName(string currDirec, string path){
 	return sub;
 }
 
+
+bool setAttribute(string path, string name, string value){
+	// size is the size of the return expected since
+	// getxattr gives garbage after the intended size
+    int retval = setxattr(path.c_str(), name.c_str(), value.c_str(), (size_t)value.size(), 0);
+    if(retval != 0){
+        cout << "Error: Setting Attributes"<< endl;
+        return false;
+    }
+    return true;
+}
+
+bool setOwnerAttributes(string path, string currUser, string currGroup){
+	bool t1 = setAttribute(path, string("user.owner"),currUser);
+	bool t2 = setAttribute(path, string("user.group"),currGroup);
+	// TODO: replace this group from currGroup to the group of directory
+	bool t3 = setAttribute(path, string("user.user."+currUser),string("rwx"));
+	bool t4 = setAttribute(path, string("user.group."+currGroup),string("r--"));
+	// TODO: replace this group from currGroup to the group of directory
+	bool fileFinish = t1 && t2 && t3 && t4;
+	return fileFinish;
+}
 int main(int argc, char** argv){
     if(argc!=2){
 		cout << "Error: Incorrect number of arguments" << endl;
@@ -126,8 +229,36 @@ int main(int argc, char** argv){
 	string currUser = getProcessUsername(currUid);
 	string currGroup = getProcessGroupname(currUid);
     // 
-	cout << getPathDirectory(currDirec, argument) << endl;
-	cout << getPathName(currDirec, argument) << endl;
+	string direcPath = getPathDirectory(currDirec, argument);
+	string direcName = getPathName(currDirec, argument);
+	argument = direcPath + "/" + direcName;
+	if(direcPath.length() < rootDir.length()){
+		cout << "Error: Unauthorised Access" << endl;
+		exit(0);
+	}
+	else if(direcExists(argument)){
+		cout << "Error: Invalid directory name" << endl;
+		exit(0);
+	}
+	else if(fileWriteAllowed(currUser, currUid, direcPath)){
+		if(mkdir(argument.c_str(), 0777) == -1){
+			cout << "Error: Unable to make directory" << endl;
+		}
+		else{
+			// directory creation successful
+			if(!setOwnerAttributes(argument, currUser, currGroup)){
+				string cmd("rm -r ");
+				cmd+=argument;
+				system(cmd.c_str());
+				cout << "Error: Creating directory" << endl;
+			}
+			// else directory created and attributes set
+		}
+	}
+	else{
+		cout << "Error: No permission to create directory" << endl;
+	}
+
 
 
     return 0;

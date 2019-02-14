@@ -222,8 +222,8 @@ bool setAttribute(string path, string name, string value){
 	// size is the size of the return expected since
 	// getxattr gives garbage after the intended size
     int retval = setxattr(path.c_str(), name.c_str(), value.c_str(), (size_t)value.size(), 0);
-    if(retval == 0){
-        cout << "Error: Getting Attributes"<< endl;
+    if(retval != 0){
+        cout << "Error: Setting Attributes"<< endl;
         return false;
     }
     return true;
