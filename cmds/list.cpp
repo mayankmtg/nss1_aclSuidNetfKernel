@@ -96,6 +96,13 @@ string getCorrectedPath(string currDirec, string path){
 	}
 }
 
+int is_regular_file(const char *path)
+{
+    struct stat path_stat;
+    stat(path, &path_stat);
+    return S_ISREG(path_stat.st_mode);
+}
+
 
 string getAttribute(string path, string name, int size){
 	// size is the size of the return expected since
@@ -208,13 +215,17 @@ int main(int argc, char** argv){
 		exit(0);
 	}
 	else {
+		if(is_regular_file(argument.c_str())){
+			cout << "Error: argument cannot be a filename"<< endl;
+			exit(0);
+		}
 		if(direcReadAllowed(currUser, currUid, argument)){
 			DIR *dr = opendir(argument.c_str());
 			struct dirent *de;
 			while ((de = readdir(dr)) != NULL){
 				string thisInode(de->d_name);
 				bool not_relative_dir = thisInode!="." && thisInode!="..";
-				if(not_relative_dir){
+				if(not_relative_dir && thisInode[0]!='.'){
 					string inodePath = argument + "/" + thisInode;
 					cout << thisInode + " ";
 					string lsString= getUserPermissions(currUser, inodePath);

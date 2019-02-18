@@ -17,10 +17,10 @@
 #include <pwd.h>
 #include <grp.h>
 #include <fstream>
-
 using namespace std;
 
 static string rootDir = "/home/mayank/simple_slash";
+
 uid_t getProcessRuid(){
 	uid_t ruid;
     uid_t euid;
@@ -32,6 +32,7 @@ uid_t getProcessRuid(){
 	}
 	return ruid;
 }
+
 string getProcessUsername(uid_t ruid){
 	struct passwd * pwuid = getpwuid(ruid);
     string username = "";
@@ -73,7 +74,6 @@ string getProcessDirectory(){
 	string retString = pwd;
 	return retString;
 }
-
 string getAttribute(string path, string name, int size){
 	// size is the size of the return expected since
 	// getxattr gives garbage after the intended size
@@ -85,6 +85,44 @@ string getAttribute(string path, string name, int size){
 	buff[size]='\0';
 	string temp = buff;
 	return temp;
+}
+
+string getUserPermissions(string username, string path){
+	string name = "user.user." + username;
+	return getAttribute(path, name, 3);
+}
+string getGroupPermissions(string groupname, string path){
+	string name = "user.group."+groupname;
+	return getAttribute(path, name, 3);
+}
+string getGroupUnionPermissions(string currUser, uid_t currUserId, string path){
+	struct passwd * pwuid = getpwuid(currUserId);
+	gid_t userGroups[10];
+    int nog=10;
+    int retVal = getgrouplist(currUser.c_str(),pwuid->pw_gid,userGroups,&nog);
+    if(retVal<0){
+        cout << "Error: In getting groups" << endl;
+        return "";
+    }
+	string finalPermissions = "---";
+    for (int i=0;i<nog;i++){
+		struct group * grpstruct= getgrgid(userGroups[i]);
+		string groupP = getGroupPermissions(grpstruct->gr_name, path);
+		if(groupP == ""){
+			continue;
+		}
+		if(groupP[0]=='r'){
+			finalPermissions[0]='r';
+
+		}
+		if(groupP[1]=='w'){
+			finalPermissions[1]='w';
+		}
+		if(groupP[2]=='x'){
+			finalPermissions[2]='x';
+		}
+    }
+	return finalPermissions;
 }
 
 // returns the corrected paths
@@ -108,102 +146,39 @@ string getCorrectedPath(string currDirec, string path){
 	}
 }
 
-bool aclManipAllowed(string currUser, string path){
-	string owner = getAttribute(path, string("user.owner"),2);
-    if(owner == ""){
-        cout << "Error: In getting attributes"<< endl;
-    }
-    if(currUser == "fr" || currUser == owner) {
-        return true;
-    }
-    return false;
-}
-
-bool setAttribute(string path, string name, string value){
-	// size is the size of the return expected since
-	// getxattr gives garbage after the intended size
-    int retval = setxattr(path.c_str(), name.c_str(), value.c_str(), (size_t)value.size(), 0);
-    if(retval != 0){
-        cout << "Error: Setting Attributes"<< endl;
-        return false;
-    }
-    return true;
-}
-
-bool setFileAttributes(string filePath, string name, string value){
-    name = "user."+ name;
-    return setAttribute(filePath, name, value);
-}
-
-bool validateName(string name){
-    size_t pos = name.find('.');
-    if(pos==string::npos){
-        return false;
-    }
-    string typeName = name.substr(0,pos);
-    string uName = name.substr(pos+1);
-    if(typeName != "user" && typeName != "group"){
-        return false;
-    }
-	if(typeName == "user"){
-		struct passwd* pwnam = getpwnam(uName.c_str());
-		if(pwnam == NULL){
-			return false;
+bool fileExAllowed(string currUser, uid_t currUserId, string path){
+	string userP = getUserPermissions(currUser, path);
+	string groupP = getGroupUnionPermissions(currUser, currUserId, path);
+	if(userP != ""){
+		if(userP[2]=='x'){
+			return true;
 		}
-		if(uName.length()!=2){
+		else{
 			return false;
 		}
 	}
-	else{
-		struct group* grnam = getgrnam(uName.c_str());
-		if(grnam == NULL){
-			return false;
-		}
-		if(uName.length()!=2){
-			return false;
-		}
+	if(groupP[2]=='x'){
+		return true;
 	}
-    return true;
+	return false;
 }
 
-bool validateValue(string value){
-    if(value.length()!=3){
-        return false;
-    }
-    if(value[0]!='r' && value[0]!='-'){
-        return false;
-    }
-    else if(value[1]!='w' && value[1]!='-'){
-        return false;
-    }
-    else if(value[2]!='x' && value[2]!='-'){
-        return false;
-    }
-    return true;
-}
 
 
 
 int main(int argc, char ** argv){
-    if(argc!=4){
+    if(argc!=2){
 		cout << "Error: Incorrect number of arguments" << endl;
 		exit(0);
 	}
     string argument = argv[1];
-    string name = argv[2];
-    string value = argv[3];
-    if(!validateName(name) || !validateValue(value)){
-        cout << "Error: Incorrect format of arguments" << endl;
-        exit(0);
-    }
-
+    
     // Process Variables
 	string currDirec = getProcessDirectory();
 	uid_t currUid = getProcessRuid();
 	string currUser = getProcessUsername(currUid);
 	string currGroup = getProcessGroupname(currUid);
     // 
-
     argument = getCorrectedPath(currDirec, argument);
     if(argument.length() < rootDir.length()){
 		cout << "Error: Unauthorised Access" << endl;
@@ -213,15 +188,17 @@ int main(int argc, char ** argv){
 		cout << "Error: Unauthorised Access" << endl;
 		exit(0);
 	}
-    else {
-		if(aclManipAllowed(currUser, argument)){
-            if(!setFileAttributes(argument, name, value)){
-                cout << "Error: Unable to set attribute"<< endl;
+	else {
+		if(fileExAllowed(currUser, currUid, argument)){
+            // cout << getFileContents(argument) << endl;
+            int retVal = chdir(argument.c_str());
+            if(retVal!=0){
+                cout << "Error: Changing Directories"<< endl;
                 exit(0);
             }
 		}
 		else{
-			cout << "Error: No permissions to set ACLs" << endl;
+			cout << "Error: No permissions to read this directory" << endl;
 			exit(0);
 		}
 	}

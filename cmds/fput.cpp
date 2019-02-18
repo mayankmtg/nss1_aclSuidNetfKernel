@@ -116,8 +116,8 @@ string getPathName(string currDirec, string path){
 
 void appendToFile(string filename, string content){
 	ofstream outfile;
-	cout << content << endl;
-	cout << filename<< endl;
+	// cout << content << endl;
+	// cout << filename<< endl;
 	outfile.open(filename.c_str(), ios::app);
 	outfile << content;
 	outfile.close();
@@ -150,7 +150,7 @@ string getAttribute(string path, string name, int size){
 	char buff[size+1];
 	ssize_t retSize = getxattr(path.c_str(), name.c_str(), buff, size);
 	if (retSize < 0) {
-        cout << "Not found attribute "<< name << endl;
+	       // cout << "Not found attribute "<< name << endl;
 		return "";
 	}
 	buff[size]='\0';
@@ -271,7 +271,6 @@ int main(int argc, char** argv){
                 }
                 fileInput += line + "\n";
             }
-            cout << fileInput << endl;
             appendToFile(argument, fileInput);
         }
         else{

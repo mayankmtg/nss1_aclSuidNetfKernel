@@ -117,7 +117,7 @@ string getAttribute(string path, string name, int size){
 	char buff[size+1];
 	ssize_t retSize = getxattr(path.c_str(), name.c_str(), buff, size);
 	if (retSize < 0) {
-        cout << "Not found attribute "<< name << endl;
+		// cout << "Not found attribute "<< name << endl;
 		return "";
 	}
 	buff[size]='\0';
